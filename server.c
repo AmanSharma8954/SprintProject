@@ -5,6 +5,8 @@
 #include "sf_searchForFile.c"
 #include "sf_searchForString.c"
 
+#define MAX_BUFFER_SIZE 1024
+
 int main() {
 
     LOG_INFO("Creating Socket %s", "");
@@ -23,12 +25,14 @@ int main() {
 
     if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
         LOG_FATAL("Bind failed %s", "");
+        close(serverSocket);
         exit(EXIT_FAILURE);
     }
 
     LOG_INFO("Listening for incoming connections %s", "");
     if (listen(serverSocket, 5) == -1) {
         LOG_FATAL("Listen failed %s", "");
+        close(serverSocket);
         exit(EXIT_FAILURE);
     }
 
@@ -36,68 +40,92 @@ int main() {
     int clientSocket = accept(serverSocket, NULL, NULL);
     if (clientSocket == -1) {
         LOG_FATAL("Accept failed %s", "");
+        close(serverSocket);
+        exit(EXIT_FAILURE);
     }
 
     // Accept connections
     while (1) {
-
-        // Receive client choice
-        int choice;
-        recv(clientSocket, &choice, sizeof(choice), 0);
-        LOG_INFO("Choice of client - %d", choice);
+        int choice = 0;
+        int bytesReceived = recv(clientSocket, &choice, sizeof(choice), 0);
+        if (bytesReceived <= 0) {
+            LOG_WARN("Failed to receive choice from client or connection closed %s", "");
+            break;
+        }
+        LOG_INFO("Received choice from client: %d", choice);
 
         char buffer[MAX_BUFFER_SIZE] = "";
         char result[MAX_BUFFER_SIZE] = "";
 
         switch (choice) {
-
             case 1:
-                recv(clientSocket, buffer, sizeof(buffer), 0);
+                bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+                if (bytesReceived <= 0) {
+                    LOG_WARN("Failed to receive data for case 1 or connection closed %s", "");
+                    break;
+                }
+                LOG_INFO("Received path from client: %s", buffer);
                 searchForFile(buffer, result);
                 send(clientSocket, result, sizeof(result), 0);
                 break;
 
             case 2:
-                recv(clientSocket, buffer, sizeof(buffer), 0);
+                bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+                if (bytesReceived <= 0) {
+                    LOG_WARN("Failed to receive data for case 2 or connection closed %s", "");
+                    break;
+                }
+                LOG_INFO("Received string to search from client: %s", buffer);
                 searchForString(buffer, result);
                 send(clientSocket, result, sizeof(result), 0);
                 if (strcmp(result, "") == 0) {
+                    strcpy(result, "This string was not found in any file\n");
+                    send(clientSocket, result, sizeof(result), 0);
                     break;
                 }
-                strcpy(result, "");
-                recv(clientSocket, buffer, sizeof(buffer), 0);
-                if (strcmp(buffer, "") == 0) {
+                bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+                if (bytesReceived <= 0) {
+                    LOG_WARN("Failed to receive file path or connection closed %s", "");
                     break;
                 }
+                LOG_INFO("Received file path from client: %s", buffer);
                 displayFileContent(buffer, result);
                 send(clientSocket, result, sizeof(result), 0);
                 break;
 
             case 3:
-                 recv(clientSocket, buffer, sizeof(buffer), 0);
+                bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+                if (bytesReceived <= 0) {
+                    LOG_WARN("Failed to receive data for case 3 or connection closed %s", "");
+                    break;
+                }
+                LOG_INFO("Received file path from client: %s", buffer);
                 displayFileContent(buffer, result);
                 send(clientSocket, result, sizeof(result), 0);
                 break;
 
             case 4:
-                LOG_INFO("Exiting execution %s", "");
+                LOG_INFO("Client requested to exit %s", "");
                 close(clientSocket);
                 close(serverSocket);
                 exit(EXIT_SUCCESS);
 
             default:
-                LOG_WARN("Invalid choice from client %s", "");
-
+                bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+                if (bytesReceived > 0) {
+                    LOG_WARN("Invalid input received from client: %s", buffer);
+                }
+                strcpy(result, "Invalid choice. Please enter a valid option.\n");
+                send(clientSocket, result, sizeof(result), 0);
+                break;
         }
-
     }
 
     LOG_INFO("Closing socket now %s", "");
     close(clientSocket);
     LOG_INFO("Socket is now closed %s", "");
+    close(serverSocket);
 
     return 0;
 }
-                
-
 
